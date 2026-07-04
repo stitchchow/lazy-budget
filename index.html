@@ -11,7 +11,9 @@
             background-color: #121212; color: #fff;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
             min-height: 100vh; margin: 0; padding: 20px;
+            box-sizing: border-box;
         }
+        *, *:before, *:after { box-sizing: inherit; }
         .container { width: 100%; max-width: 400px; background: #1e1e1e; padding: 25px; border-radius: 24px; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
         h1 { font-size: 22px; color: #ffb74d; margin: 0 0 5px 0; }
         .subtitle { font-size: 13px; color: #aaa; margin-bottom: 20px; }
@@ -33,7 +35,6 @@
         .history-item { padding: 8px 0; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
         .btn-delete { background: none; border: none; color: #ff5252; cursor: pointer; font-size: 14px; padding: 0 5px; }
 
-        /* 📊 移至底部：總計顯示面板 */
         .total-box { background: #ffb74d; color: #000; padding: 15px; border-radius: 16px; font-weight: bold; margin-top: 10px; }
         .total-box span { font-size: 26px; display: block; margin-top: 5px; color: #121212; }
 
@@ -206,3 +207,56 @@
         localStorage.setItem('擺爛記帳Data_OCR', JSON.stringify(logs));
 
         finalAmount = 0;
+        updateUI();
+    }
+
+    function editRecord(id) {
+        const targetLog = logs.find(log => log.id === id);
+        if (!targetLog) return;
+        
+        const newCategory = prompt(`請輸入新的消費項目/分類 (當前: ${targetLog.category}):`, targetLog.category);
+        if (newCategory === null) return;
+
+        const newAmount = prompt(`請輸入新的金額 (當前: $${targetLog.amount}):`, targetLog.amount);
+        
+        if (newAmount !== null && !isNaN(newAmount) && parseInt(newAmount) >= 0) {
+            targetLog.category = newCategory.trim() || "未命名消費";
+            targetLog.amount = Math.round(parseInt(newAmount));
+            localStorage.setItem('擺爛記帳Data_OCR', JSON.stringify(logs));
+            updateUI();
+        }
+    }
+
+    function deleteRecord(id) {
+        logs = logs.filter(log => log.id !== id);
+        localStorage.setItem('擺爛記帳Data_OCR', JSON.stringify(logs));
+        updateUI();
+    }
+
+    function updateUI() {
+        document.getElementById('display-amount').innerText = `$${finalAmount}`;
+        
+        const totalSum = logs.reduce((sum, log) => sum + log.amount, 0);
+        document.getElementById('grand-total').innerText = `$${totalSum}`;
+
+        const box = document.getElementById('history-box');
+        if (logs.length === 0) {
+            box.innerHTML = `<div style="color: #666; text-align: center; font-size: 12px; padding: 15px;">未有紀錄，繼續擺爛</div>`;
+            return;
+        }
+        box.innerHTML = logs.map(log => `
+            <div class="history-item">
+                <span>[${log.time}] <b>${log.category}</b> <b style="color: #ffb74d; margin-left: 5px;">+$${log.amount}</b></span>
+                <div>
+                    <button style="background:none; border:none; cursor:pointer; font-size:14px; margin-right:8px;" onclick="editRecord(${log.id})">✏️</button>
+                    <button class="btn-delete" onclick="deleteRecord(${log.id})">❌</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    updateUI();
+</script>
+
+</body>
+</html>
