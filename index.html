@@ -100,51 +100,69 @@
                 const lines = text.split('\n');
                 let detectedItems = [];
                 
-                // 排除不屬於商品的明細關鍵字
-                const ignoreKeywords = /(?:total|sub total|subtotal|cash|change|tendered|thank|balance|invoice|receipt|visa|master|fps|轉帳|總計|金額|items sold|qty|description|price|sales)/i;
+                // 用於過濾掉非商品行的關鍵字
+                const ignoreKeywords = /(?:cash|change|tendered|thank|balance|invoice|receipt|visa|master|fps|轉帳|元|items sold|qty|description|price|sales)/i;
 
                 for (let line of lines) {
                     let cleanLine = line.trim();
                     if (!cleanLine || ignoreKeywords.test(cleanLine)) continue;
 
-                    // 放寬價格匹配：允許數字前後存在 OCR 雜訊或錯別字符
-                    const priceMatch = cleanLine.match(/(?:[\$£¥]|\b)(\d+(?:\.\d{1,2})?)\b/);
-                    
-                    if (priceMatch) {
-                        let price = parseFloat(priceMatch[1]);
+                    // 1. 如果該行包含明確的商品標誌（如 1x, 2x）
+                    if (/^\d+\s*x/i.test(cleanLine)) {
+                        const priceMatch = cleanLine.match(/(?:[\$£¥]|\b)(\d+(?:\.\d{1,2})?)\b\s*$/);
+                        let price = priceMatch ? parseFloat(priceMatch[1]) : null;
                         
-                        // 提取商品名稱：拿掉數量 (如 1x)、拿掉找到的價格數字，以及常見雜訊符號
-                        let namePart = cleanLine.replace(priceMatch[0], '')
-                                                 .replace(/^\d+s*x/i, '')
-                                                 .replace(/[\d\.\$£¥]/g, '')
-                                                 .replace(/[^\u4e00-\u9fa5a-zA-Z\s]/g, '') // 只保留中英文字元與空格
+                        let namePart = cleanLine.replace(/^\d+\s*x/i, '')
+                                                 .replace(/[^\u4e00-\u9fa5a-zA-Z\s]/g, '')
                                                  .trim();
+                        // 移除結尾的殘留雜訊字串 (例如 nao)
+                        namePart = namePart.replace(/\b[a-zA-Z]{1,3}\b\s*$/g, '').trim();
 
-                        // 清除掉長度過短或純屬雜訊的品名字串 (如殘留的單一錯字 "nao")
-                        namePart = namePart.replace(/\b[a-zA-Z]{1,3}\b\s*$/g, '').trim(); 
-
-                        if (namePart.length > 2 && price > 0) {
-                            detectedItems.push({ name: namePart, price: Math.round(price) });
+                        if (namePart.length > 2) {
+                            detectedItems.push({
+                                name: namePart,
+                                price: price ? Math.round(price) : null // 暫時允許無價格，等候保底補正
+                            });
                         }
                     }
                 }
 
-                // 如果放寬規則依舊因為相片模糊沒配對到任何行，執行保底價格搜尋
-                if (detectedItems.length === 0) {
-                    const fallbackMatches = text.replace(/,/g, '').match(/\b\d+(?:\.\d{1,2})?\b/g);
-                    if (fallbackMatches) {
-                        const prices = fallbackMatches.map(Number).filter(p => p > 0 && p < 1000);
-                        if (prices.length > 0) {
-                            // 挑選常規低標金額作為保底
-                            let fallbackPrice = Math.round(Math.min(...prices));
-                            detectedItems.push({ name: predictCategoryByTime(), price: fallbackPrice });
+                // 2. 如果單品解析沒有配對到完好價格，則尋找精確的 "Total" 總額行作為修正保底
+                let fileTotalAmount = null;
+                for (let line of lines) {
+                    if (/^(?:total|sub\s*total|subtotal|總計|金額|總額)[:\s]*[\$£¥]?\s*\d+/i.test(line.trim())) {
+                        const totalMatch = line.match(/(\d+(?:\.\d{1,2})?)/);
+                        if (totalMatch) {
+                            fileTotalAmount = Math.round(parseFloat(totalMatch[1]));
+                            break;
                         }
                     }
                 }
 
-                if (detectedItems.length > 0) {
+                // 3. 補正與導入邏輯
+                let finalImportList = [];
+
+                detectedItems.forEach(item => {
+                    if (item.price && item.price > 0) {
+                        finalImportList.push(item);
+                    } else if (fileTotalAmount && fileTotalAmount > 0) {
+                        // 如果品項遺失了價格（被辨識成雜訊），但有抓到總金額，直接將總金額配給此品項
+                        item.price = fileTotalAmount;
+                        finalImportList.push(item);
+                    }
+                });
+
+                // 4. 如果以上規則都沒抓到任何商品，則採用最安全的 Total 數據保底
+                if (finalImportList.length === 0 && fileTotalAmount && fileTotalAmount > 0) {
+                    finalImportList.push({
+                        name: "收據消費 (自動識別)",
+                        price: fileTotalAmount
+                    });
+                }
+
+                if (finalImportList.length > 0) {
                     const timeString = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                    detectedItems.forEach(item => {
+                    finalImportList.forEach(item => {
                         logs.unshift({
                             id: Date.now() + Math.random(), 
                             amount: item.price,
@@ -153,7 +171,7 @@
                         });
                     });
                     localStorage.setItem('擺爛記帳Data_OCR', JSON.stringify(logs));
-                    document.getElementById('ocr-status').innerText = `✅ 成功導入 ${detectedItems.length} 項單品！`;
+                    document.getElementById('ocr-status').innerText = `✅ 成功導入 ${finalImportList.length} 項單品！`;
                 } else {
                     document.getElementById('ocr-status').innerText = "⚠️ 無法解析明細，請使用上方按鈕手動記帳";
                 }
