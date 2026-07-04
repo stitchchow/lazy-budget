@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>極度擺爛·AI智能單品識別記帳 Pro</title>
+    <title>極度擺爛·AI智能全單品識別記帳 Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         body {
@@ -16,6 +16,10 @@
         h1 { font-size: 22px; color: #ffb74d; margin: 0 0 5px 0; }
         .subtitle { font-size: 13px; color: #aaa; margin-bottom: 20px; }
         
+        /* 總計顯示面板 */
+        .total-box { background: #ffb74d; color: #000; padding: 15px; border-radius: 16px; margin-bottom: 15px; font-weight: bold; }
+        .total-box span { font-size: 26px; display: block; margin-top: 5px; color: #121212; }
+
         .panel { background: #2d2d2d; padding: 15px; border-radius: 16px; margin-bottom: 15px; border: 1px solid #444; }
         .category-badge { display: inline-block; background: #ff5722; color: white; padding: 4px 12px; border-radius: 20px; font-size: 16px; font-weight: bold; margin-top: 5px; }
         
@@ -32,7 +36,7 @@
         
         .btn-action { background: #0288d1; color: white; border: none; padding: 15px; font-size: 18px; font-weight: bold; border-radius: 16px; cursor: pointer; width: 100%; margin-bottom: 15px; }
         
-        .history { text-align: left; max-height: 180px; overflow-y: auto; background: #1a1a1a; padding: 10px; border-radius: 12px; font-size: 13px; }
+        .history { text-align: left; max-height: 220px; overflow-y: auto; background: #1a1a1a; padding: 10px; border-radius: 12px; font-size: 13px; }
         .history-item { padding: 8px 0; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
         .btn-delete { background: none; border: none; color: #ff5252; cursor: pointer; font-size: 14px; padding: 0 5px; }
 
@@ -42,16 +46,20 @@
 <body>
 
 <div class="container">
-    <h1>過濾單品記帳 Pro</h1>
-    <div class="subtitle">自動提取品名文字與消費金額</div>
+    <h1>多單品自動流水帳 Pro</h1>
+    <div class="subtitle">自動提取多項商品明細與拆分金額</div>
 
-    <div class="panel">
-        <div style="font-size: 13px; color: #ccc;" id="prediction-type">偵測到的品名項目：</div>
-        <div id="auto-cat" class="category-badge">日常消費</div>
+    <div class="total-box">
+        📊 流水帳總和合計 (Total Sum)
+        <span id="grand-total">$0</span>
+    </div>
+
+    <div class="panel" style="display:none;">
+        <div id="auto-cat"></div>
     </div>
 
     <div class="ocr-zone">
-        <label for="file-input" class="btn-upload">📸 上載舊單 / 收據 Screencap</label>
+        <label for="file-input" class="btn-upload">📸 上載多品項收據 Screencap</label>
         <input type="file" id="file-input" accept="image/*" style="display: none;" onchange="handleImage(this)">
         <div id="ocr-status">等待上載圖片...</div>
     </div>
@@ -66,9 +74,9 @@
         <button class="btn-money clear" onclick="resetInput()">歸零 / 重設</button>
     </div>
 
-    <button class="btn-action" onclick="saveRecord()">👌 確認記低（自動儲存）</button>
+    <button class="btn-action" onclick="saveManualRecord()">👌 手動加算一筆紀錄</button>
 
-    <h3 style="font-size: 13px; text-align: left; margin: 10px 0 5px 0; color: #aaa;">今日流水帳：</h3>
+    <h3 style="font-size: 13px; text-align: left; margin: 10px 0 5px 0; color: #aaa;">今日流水帳明細：</h3>
     <div class="history" id="history-box"></div>
     
     <div id="debug-box" class="debug-log"></div>
@@ -76,7 +84,6 @@
 
 <script>
     let finalAmount = 0;
-    let finalCategory = "日常消費";
     let logs = JSON.parse(localStorage.getItem('擺爛記帳Data_OCR')) || [];
 
     function predictCategoryByTime() {
@@ -93,7 +100,7 @@
         const file = input.files[0];
         if (!file) return;
 
-        document.getElementById('ocr-status').innerText = "⚡ 正在分析收據線索...";
+        document.getElementById('ocr-status').innerText = "⚡ 正在批量提取單品清單...";
         document.getElementById('debug-box').style.display = 'none';
         
         const reader = new FileReader();
@@ -107,42 +114,47 @@
                 document.getElementById('debug-box').style.display = 'block';
 
                 const lines = text.split('\n');
-                let foundItemName = "";
-                let foundItemPrice = 0;
+                let detectedItems = [];
 
-                // 擴大黑名單：徹底封殺 "items sold", "qty item description", "sub total" 等干擾項目
                 const ignoreKeywords = /(?:total|sub total|subtotal|cash|change|tendered|thank|balance|invoice|receipt|visa|master|fps|轉帳|總計|金額|items sold|items|qty|description|price|品名|數量|單價)/i;
 
                 for (let line of lines) {
                     let cleanLine = line.trim();
-                    
-                    // 如果這行沒有內容，或者中了黑名單關鍵字，直接跳過看下一行
                     if (!cleanLine || ignoreKeywords.test(cleanLine)) continue;
 
-                    // 尋找價格格式
                     const linePriceMatch = cleanLine.match(/(?:[\$£¥]|\b)(\d+(?:\.\d{1,2})?)\b\s*$/);
                     
                     if (linePriceMatch) {
                         let price = parseFloat(linePriceMatch[1]);
                         let namePart = cleanLine.replace(linePriceMatch[0], '')
-                                                 .replace(/^\d+x\s*/i, '') // 去掉數量的 1x 
-                                                 .replace(/^[\s|:|.|-]+/, '') // 去掉前方殘留的符號雜訊
+                                                 .replace(/^\d+x\s*/i, '') 
+                                                 .replace(/^[\s|:|.|-]+/, '') 
                                                  .trim();
                         
                         if (namePart.length > 2 && price > 0) {
-                            foundItemName = namePart;
-                            foundItemPrice = price;
-                            break; // 抓到了真正的商品行（如 Strongbow Bottle）直接結束迴圈
+                            detectedItems.push({
+                                name: namePart,
+                                price: Math.round(price)
+                            });
                         }
                     }
                 }
 
-                if (foundItemName && foundItemPrice > 0) {
-                    finalCategory = foundItemName;
-                    finalAmount = Math.round(foundItemPrice);
-                    document.getElementById('ocr-status').innerText = "✅ 成功匹配單品項目名稱與金額！";
+                if (detectedItems.length > 0) {
+                    const timeString = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    
+                    detectedItems.forEach(item => {
+                        logs.unshift({
+                            id: Date.now() + Math.random(), 
+                            amount: item.price,
+                            category: item.name,
+                            time: timeString
+                        });
+                    });
+
+                    localStorage.setItem('擺爛記帳Data_OCR', JSON.stringify(logs));
+                    document.getElementById('ocr-status').innerText = `✅ 成功導入 ${detectedItems.length} 項單品明細！`;
                 } else {
-                    // 保底機制
                     let cleanText = text.replace(/,/g, '');
                     let detectedNumbers = [];
                     const currencyRegex = /(?:HK\$|\$|£)\s*(\d+(?:\.\d{1,2})?)/gi;
@@ -151,16 +163,21 @@
                         detectedNumbers.push(parseFloat(match[1]));
                     }
                     if (detectedNumbers.length > 0) {
-                        finalAmount = Math.round(Math.min(...detectedNumbers));
-                        finalCategory = predictCategoryByTime();
-                        document.getElementById('ocr-status').innerText = "✅ 找不到明確單品描述，改用金額保底分類";
+                        let fallbackPrice = Math.round(Math.min(...detectedNumbers));
+                        let fallbackCat = predictCategoryByTime();
+                        logs.unshift({
+                            id: Date.now(),
+                            amount: fallbackPrice,
+                            category: fallbackCat,
+                            time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+                        });
+                        localStorage.setItem('擺爛記帳Data_OCR', JSON.stringify(logs));
+                        document.getElementById('ocr-status').innerText = "✅ 找不到明細，已自動寫入低保金額";
                     } else {
-                        document.getElementById('ocr-status').innerText = "⚠️ 讀取失敗，請手動輸入校對";
+                        document.getElementById('ocr-status').innerText = "⚠️ 讀取失敗，請手動校對數字";
                     }
                 }
 
-                document.getElementById('prediction-type').innerText = "💡 偵測到的品名項目：";
-                document.getElementById('auto-cat').innerText = finalCategory;
                 updateUI();
             }).catch(err => {
                 document.getElementById('ocr-status').innerText = "⚠️ 辨識失敗，請再試一次";
@@ -173,32 +190,30 @@
     function adjustAmount(val) {
         finalAmount += val;
         if (finalAmount < 0) finalAmount = 0;
-        updateUI();
+        document.getElementById('display-amount').innerText = `$${finalAmount}`;
     }
 
     function resetInput() {
         finalAmount = 0;
-        finalCategory = predictCategoryByTime();
-        document.getElementById('prediction-type').innerText = "系統當前預判：";
-        document.getElementById('auto-cat').innerText = finalCategory;
         document.getElementById('ocr-status').innerText = "等待下張圖片...";
         document.getElementById('debug-box').style.display = 'none';
         updateUI();
     }
 
-    function saveRecord() {
+    function saveManualRecord() {
         if (finalAmount <= 0) return;
         const timeString = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
 
         logs.unshift({
             id: Date.now(),
             amount: finalAmount,
-            category: finalCategory,
+            category: predictCategoryByTime(),
             time: timeString
         });
         localStorage.setItem('擺爛記帳Data_OCR', JSON.stringify(logs));
 
-        resetInput();
+        finalAmount = 0;
+        updateUI();
     }
 
     function editRecord(id) {
@@ -226,6 +241,11 @@
 
     function updateUI() {
         document.getElementById('display-amount').innerText = `$${finalAmount}`;
+        
+        // 🧮 計算全域總和
+        const totalSum = logs.reduce((sum, log) => sum + log.amount, 0);
+        document.getElementById('grand-total').innerText = `$${totalSum}`;
+
         const box = document.getElementById('history-box');
         if (logs.length === 0) {
             box.innerHTML = `<div style="color: #666; text-align: center; font-size: 12px; padding: 15px;">未有紀錄，繼續擺爛</div>`;
@@ -242,8 +262,6 @@
         `).join('');
     }
 
-    finalCategory = predictCategoryByTime();
-    document.getElementById('auto-cat').innerText = finalCategory;
     updateUI();
 </script>
 
