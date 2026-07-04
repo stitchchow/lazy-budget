@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>極度擺爛·AI影相OCR記帳 Pro</title>
+    <title>極度擺爛·AI智能文本匹配記帳 Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         body {
@@ -26,33 +26,35 @@
         .btn-upload { background: #00e5ff; color: #000; border: none; padding: 12px; font-size: 15px; font-weight: bold; border-radius: 12px; cursor: pointer; width: 100%; display: block; text-align: center; }
         #ocr-status { font-size: 12px; color: #00e5ff; margin-top: 8px; font-weight: bold; min-height: 16px; }
 
-        /* 快速鍵盤調整 */
+        /* 快速調整面板 */
         .money-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 15px; }
         .btn-money { background: #388e3c; color: white; border: none; padding: 12px 5px; font-size: 15px; font-weight: bold; border-radius: 12px; cursor: pointer; }
         .btn-money.minus { background: #c62828; }
         .btn-money.clear { background: #555; grid-column: span 4; padding: 8px; font-size: 12px; }
         
         .btn-action { background: #0288d1; color: white; border: none; padding: 15px; font-size: 18px; font-weight: bold; border-radius: 16px; cursor: pointer; width: 100%; margin-bottom: 15px; }
-        .history { text-align: left; max-height: 120px; overflow-y: auto; background: #1a1a1a; padding: 10px; border-radius: 12px; font-size: 13px; }
-        .history-item { padding: 6px 0; border-bottom: 1px solid #333; display: flex; justify-content: space-between; }
         
-        /* 測試用：顯示偵測到的文字庫 */
-        .debug-log { font-size: 10px; color: #666; text-align: left; background: #000; padding: 8px; border-radius: 8px; max-height: 60px; overflow-y: auto; display: none; margin-top: 10px; }
+        /* 歷史紀錄與刪除鍵 */
+        .history { text-align: left; max-height: 180px; overflow-y: auto; background: #1a1a1a; padding: 10px; border-radius: 12px; font-size: 13px; }
+        .history-item { padding: 8px 0; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+        .btn-delete { background: none; border: none; color: #ff5252; cursor: pointer; font-size: 14px; padding: 0 5px; }
+
+        .debug-log { font-size: 10px; color: #aaa; text-align: left; background: #000; padding: 8px; border-radius: 8px; max-height: 80px; overflow-y: auto; display: none; margin-top: 10px; border: 1px dashed #666; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>懶人自動記帳 Pro + Smart OCR</h1>
-    <div class="subtitle">影張單 / 掉張 Screencap 全自動讀數</div>
+    <h1>懶人自動記帳 Pro</h1>
+    <div class="subtitle">圖片智能文字匹配 · 跨時段精準分類</div>
 
     <div class="panel">
-        <div style="font-size: 13px; color: #ccc;">系統自動預判時段：</div>
+        <div style="font-size: 13px; color: #ccc;" id="prediction-type">系統當前預判：</div>
         <div id="auto-cat" class="category-badge">日常消費</div>
     </div>
 
     <div class="ocr-zone">
-        <label for="file-input" class="btn-upload">📸 影相 / 選擇收據 Screencap</label>
+        <label for="file-input" class="btn-upload">📸 上載舊單 / 收據 Screencap</label>
         <input type="file" id="file-input" accept="image/*" style="display: none;" onchange="handleImage(this)">
         <div id="ocr-status">等待上載圖片...</div>
     </div>
@@ -77,132 +79,63 @@
 
 <script>
     let finalAmount = 0;
+    let finalCategory = "日常消費";
     let logs = JSON.parse(localStorage.getItem('擺爛記帳Data_OCR')) || [];
 
-    function predictCategory() {
+    // 基礎時間預判（純手動或未上載圖片時的保底）
+    function predictCategoryByTime() {
         const hour = new Date().getHours();
-        let category = "日常消費";
-        if (hour >= 6 && hour < 11) category = "☕ 早餐交通";
-        else if (hour >= 11 && hour < 14) category = "🍱 續命午餐";
-        else if (hour >= 14 && hour < 17) category = "🍰 蛇王下午茶";
-        else if (hour >= 17 && hour < 21) category = "🏠 放工晚餐";
-        else if (hour >= 21 && hour < 24) category = "🍺 熱血宵夜";
-        else category = "🌙 凌晨神秘消費";
-        document.getElementById('auto-cat').innerText = category;
-        return category;
+        if (hour >= 6 && hour < 11) return "☕ 早餐交通";
+        if (hour >= 11 && hour < 14) return "🍱 續命午餐";
+        if (hour >= 14 && hour < 17) return "🍰 蛇王下午茶";
+        if (hour >= 17 && hour < 21) return "🏠 放工晚餐";
+        if (hour >= 21 && hour < 24) return "🍺 熱血宵夜";
+        return "🌙 凌晨神秘消費";
     }
 
-    // 進階圖片 OCR 處理
+    // 智能核心：依據截圖中讀出的商戶/文字關鍵字進行分類匹配
+    function matchCategoryByText(rawText) {
+        const text = rawText.toLowerCase();
+
+        // 1. 早餐/咖啡店關鍵字
+        if (/coffee|cafe|alpha|starbucks|mcdonald|breakfast|早|美心西餅/.test(text)) {
+            return "☕ 早餐 / 咖啡店";
+        }
+        // 2. 正餐/外賣平台關鍵字
+        if (/foodpanda|keeta|deliveroo|restaurant|餐|麵|飯|意粉|譚仔|大家樂|大快活/.test(text)) {
+            return "🍱 續命正餐 / 外賣";
+        }
+        // 3. 交通關鍵字
+        if (/mtr|kmb|lrt|taxi|uber|八達通|地鐵|的士|巴士|過海/.test(text)) {
+            return "🚇 交通運輸";
+        }
+        // 4. 網購/娛樂/課金關鍵字
+        if (/apple|hkt|psn|nintendo|steam|taobao|hktvmall|淘寶|課金|買|網購/.test(text)) {
+            return "🛍️ 網購娛樂 / 課金";
+        }
+
+        // 找不到任何關鍵字，就用上載當下的時間作為保底猜測
+        return predictCategoryByTime();
+    }
+
     function handleImage(input) {
         const file = input.files[0];
         if (!file) return;
 
-        document.getElementById('ocr-status').innerText = "⚡ 擺爛 AI 正在深度掃描文字...";
+        document.getElementById('ocr-status').innerText = "⚡ 擺爛 AI 正在深度掃描文字與內容...";
         document.getElementById('debug-box').style.display = 'none';
         
         const reader = new FileReader();
         reader.onload = function() {
             Tesseract.recognize(
                 reader.result,
-                'eng', // 英語對數字、符號最敏感
+                'eng+chi_tra', // 同時啟用英文與繁體中文識別，精準度大提升！
                 { logger: m => console.log(m.status + ": " + Math.round(m.progress * 100) + "%") }
             ).then(({ data: { text } }) => {
-                // 顯示隱藏的 raw text 方便排查
-                document.getElementById('debug-box').innerText = "偵測到原始文字:\n" + text;
+                document.getElementById('debug-box').innerText = "🔍 讀取到的卡單內容:\n" + text;
                 document.getElementById('debug-box').style.display = 'block';
 
-                // 清理文字，移除逗號（防千位數干擾例如 1,200 變成 1）
-                let cleanText = text.replace(/,/g, '');
-
-                let detectedNumbers = [];
-
-                // 策略 1：尋找明確帶有貨幣符號的金客 (e.g. $45, HK$128.5)
-                const currencyRegex = /(?:HK\$|\$)\s*(\d+(?:\.\d{1,2})?)/gi;
-                let match;
-                while ((match = currencyRegex.exec(cleanText)) !== null) {
-                    detectedNumbers.push(parseFloat(match[1]));
-                }
-
-                // 策略 2：如果找不到 $ 符號，尋找關鍵字（Total, Amount, 總額, 轉帳）後面的數字
-                if (detectedNumbers.length === 0) {
-                    const keywordRegex = /(?:total|amount|sum|pay|fps|轉帳|總計|金額|🛡️|💰)\s*:?\s*(\d+(?:\.\d{1,2})?)/gi;
-                    while ((match = keywordRegex.exec(cleanText)) !== null) {
-                        detectedNumbers.push(parseFloat(match[1]));
-                    }
-                }
-
-                // 策略 3：終極保底，抓取整張圖裡所有「看起來像價錢」的 2 到 4 位整數
-                if (detectedNumbers.length === 0) {
-                    const generalPriceRegex = /\b\d{2,4}\b/g;
-                    const pureNumbers = cleanText.match(generalPriceRegex);
-                    if (pureNumbers) {
-                        // 過濾掉明顯像年份的數字 (例如 2024, 2025, 2026)
-                        detectedNumbers = pureNumbers.map(n => parseFloat(n)).filter(num => num < 2020 || num > 2030);
-                    }
-                }
-
-                if (detectedNumbers.length > 0) {
-                    // 對於收據、找數畫面，通常「最大」的那個數字就是總金額
-                    let maxAmount = Math.max(...detectedNumbers);
-                    
-                    // 擺爛流：四捨五入抹去小數點，方便記帳
-                    finalAmount = Math.round(maxAmount);
-                    
-                    document.getElementById('ocr-status').innerText = "✅ 成功自動抓取金額！";
-                    updateUI();
-                } else {
-                    document.getElementById('ocr-status').innerText = "❌ 圖片太模糊/找不到金額，請手動調整";
-                }
-            }).catch(err => {
-                document.getElementById('ocr-status').innerText = "⚠️ 辨識崩潰，請再試一次";
-                console.error(err);
-            });
-        };
-        reader.readAsDataURL(file);
-    }
-
-    function adjustAmount(val) {
-        finalAmount += val;
-        if (finalAmount < 0) finalAmount = 0;
-        updateUI();
-    }
-
-    function resetInput() {
-        finalAmount = 0;
-        document.getElementById('ocr-status').innerText = "等待下張圖片...";
-        document.getElementById('debug-box').style.display = 'none';
-        updateUI();
-    }
-
-    function saveRecord() {
-        if (finalAmount <= 0) return;
-        const cat = predictCategory();
-        const timeString = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-
-        logs.unshift({ amount: finalAmount, category: cat, time: timeString });
-        localStorage.setItem('擺爛記帳Data_OCR', JSON.stringify(logs));
-
-        resetInput();
-    }
-
-    function updateUI() {
-        document.getElementById('display-amount').innerText = `$${finalAmount}`;
-        const box = document.getElementById('history-box');
-        if (logs.length === 0) {
-            box.innerHTML = `<div style="color: #666; text-align: center; font-size: 12px; padding: 15px;">未有紀錄，繼續擺爛</div>`;
-            return;
-        }
-        box.innerHTML = logs.map(log => `
-            <div class="history-item">
-                <span>[${log.time}] ${log.category}</span>
-                <span style="color: #ffb74d; font-weight:bold;">+$${log.amount}</span>
-            </div>
-        `).join('');
-    }
-
-    predictCategory();
-    updateUI();
-</script>
-
-</body>
-</html>
+                // 進行文本內容品類匹配
+                finalCategory = matchCategoryByText(text);
+                document.getElementById('prediction-type').innerText = "💡 依據截圖商戶匹配品類：";
+                document.getElementById('auto-cat
