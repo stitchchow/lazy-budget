@@ -3,23 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能多管道識別記帳 Pro</title>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <title>極度擺爛·Gemini AI 全自動記帳 Pro</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background-color: #121212; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
         .container { width: 100%; max-width: 400px; background: #1e1e1e; padding: 25px; border-radius: 24px; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
         h1 { font-size: 22px; color: #ffb74d; margin: 0 0 5px 0; }
-        .subtitle { font-size: 13px; color: #aaa; margin-bottom: 20px; }
+        .subtitle { font-size: 13px; color: #aaa; margin-bottom: 15px; }
         
-        .ocr-zone { background: #37474f; padding: 15px; border-radius: 16px; margin-bottom: 15px; border: 1px solid #00e5ff; }
-        .btn-upload { background: #00e5ff; color: #000; border: none; padding: 12px; font-size: 15px; font-weight: bold; border-radius: 12px; cursor: pointer; width: 100%; display: block; text-align: center; }
-        #ocr-status { font-size: 12px; color: #00e5ff; margin-top: 8px; font-weight: bold; min-height: 16px; }
-        
-        /* ✨ 新增：Live Text 貼上區域樣式 */
-        .paste-zone { margin-bottom: 15px; }
-        #paste-box { width: 100%; height: 55px; background: #2b2b2b; color: #fff; border: 1px dashed #555; border-radius: 12px; padding: 10px; font-size: 12px; box-sizing: border-box; resize: none; transition: border-color 0.3s; }
-        #paste-box:focus { border-color: #ffb74d; outline: none; }
+        /* API Key 設定區樣式 */
+        .key-zone { background: #262626; padding: 10px; border-radius: 12px; margin-bottom: 15px; display: flex; gap: 8px; align-items: center; }
+        .key-input { flex: 1; background: #121212; border: 1px solid #444; color: #fff; padding: 8px; border-radius: 8px; font-size: 11px; }
+        .btn-save-key { background: #ffb74d; color: #000; border: none; padding: 8px 12px; font-size: 11px; font-weight: bold; border-radius: 8px; cursor: pointer; }
 
+        .ocr-zone { background: #37474f; padding: 20px; border-radius: 16px; margin-bottom: 15px; border: 2px dashed #00e5ff; }
+        .btn-upload { background: #00e5ff; color: #000; border: none; padding: 14px; font-size: 16px; font-weight: bold; border-radius: 12px; cursor: pointer; width: 100%; display: block; text-align: center; }
+        #ocr-status { font-size: 13px; color: #00e5ff; margin-top: 10px; font-weight: bold; min-height: 18px; }
+        
         .current-input { font-size: 45px; font-weight: bold; color: #81c784; margin: 15px 0; letter-spacing: 1px; }
         .money-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 15px; }
         .btn-money { background: #388e3c; color: white; border: none; padding: 12px 5px; font-size: 15px; font-weight: bold; border-radius: 12px; cursor: pointer; }
@@ -33,23 +32,23 @@
         
         .total-box { background: #ffb74d; color: #000; padding: 15px; border-radius: 16px; font-weight: bold; margin-top: 10px; }
         .total-box span { font-size: 26px; display: block; margin-top: 5px; color: #121212; }
-        .debug-log { font-size: 11px; color: #ffb74d; text-align: left; background: #000; padding: 10px; border-radius: 8px; max-height: 120px; overflow-y: auto; margin-top: 10px; border: 1px dashed #666; white-space: pre-wrap; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>多管道自動流水帳 Pro</h1>
-    <div class="subtitle">圖片自動分析 + 支援手機 Live Text 複製貼上</div>
+    <h1>極度擺爛·AI全自動記帳</h1>
+    <div class="subtitle">扔入收據圖片，Gemini 自動精確拆分項目</div>
 
-    <div class="ocr-zone">
-        <label for="file-input" class="btn-upload">📸 上載多品項收據 Screencap</label>
-        <input type="file" id="file-input" accept="image/*" style="display: none;" onchange="handleImage(this)">
-        <div id="ocr-status">等待上載圖片...</div>
+    <div class="key-zone">
+        <input type="password" id="api-key-input" class="key-input" placeholder="🔑 在此貼上免費的 Gemini API Key">
+        <button class="btn-save-key" onclick="saveApiKey()">儲存設定</button>
     </div>
 
-    <div class="paste-zone">
-        <textarea id="paste-box" placeholder="💡 備用方案：長按相簿複製文字 (Live Text) 直接貼在此處..." oninput="handleRawText(this.value)"></textarea>
+    <div class="ocr-zone">
+        <label for="file-input" class="btn-upload">📸 扔入收據相片 / 截圖</label>
+        <input type="file" id="file-input" accept="image/*" style="display: none;" onchange="handleReceiptAI(this)">
+        <div id="ocr-status">等待上載收據...</div>
     </div>
 
     <div class="current-input" id="display-amount">$0</div>
@@ -57,3 +56,96 @@
     <div class="money-grid">
         <button class="btn-money minus" onclick="adjustAmount(-10)">-$10</button>
         <button class="btn-money minus" onclick="adjustAmount(-1)">-$1</button>
+        <button class="btn-money" onclick="adjustAmount(1)">+$1</button>
+        <button class="btn-money" onclick="adjustAmount(10)">+$10</button>
+        <button class="btn-money clear" onclick="resetInput()">歸零 / 重設</button>
+    </div>
+
+    <button class="btn-action" onclick="saveManualRecord()">👌 手動加算一筆紀錄</button>
+
+    <h3 style="font-size: 13px; text-align: left; margin: 10px 0 5px 0; color: #aaa;">今日流水帳明細：</h3>
+    <div class="history" id="history-box"></div>
+
+    <div class="total-box">
+        📊 流水帳總和合計 (Total Sum)
+        <span id="grand-total">$0</span>
+    </div>
+</div>
+
+<script>
+    let finalAmount = 0;
+    let logs = [];
+    
+    // 初始化讀取本地數據
+    try {
+        logs = JSON.parse(localStorage.getItem('擺爛記帳Data_OCR')) || [];
+        if (!Array.isArray(logs)) logs = [];
+    } catch(e) { logs = []; }
+
+    // 初始化讀取本地 Key
+    window.onload = function() {
+        const savedKey = localStorage.getItem('gemini_api_key_lazy');
+        if (savedKey) {
+            document.getElementById('api-key-input').value = savedKey;
+            document.getElementById('ocr-status').innerText = "✨ Gemini AI 已就緒，隨時可以丟圖！";
+        } else {
+            document.getElementById('ocr-status').innerText = "⚠️ 請先在上方配置免費的 API Key";
+        }
+        updateUI();
+    };
+
+    function saveApiKey() {
+        const key = document.getElementById('api-key-input').value.trim();
+        if (key) {
+            localStorage.setItem('gemini_api_key_lazy', key);
+            alert("🔑 密鑰已安全儲存於本地瀏覽器！");
+            document.getElementById('ocr-status').innerText = "✨ Gemini AI 已就緒，隨時可以丟圖！";
+        } else {
+            alert("請輸入有效的金鑰");
+        }
+    }
+
+    function predictCategoryByTime() {
+        const hour = new Date().getHours();
+        if (hour >= 6 && hour < 11) return "☕ 早餐 / 交通";
+        if (hour >= 11 && hour < 14) return "🍱 續命午餐";
+        if (hour >= 14 && hour < 17) return "🍰 蛇王下午茶";
+        if (hour >= 17 && hour < 21) return "🏠 放工晚餐";
+        return "🍺 熱血宵夜";
+    }
+
+    // ✨ 核心：真正大腦级别的 Gemini 讀圖辨識引擎
+    async function handleReceiptAI(input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        const apiKey = localStorage.getItem('gemini_api_key_lazy');
+        if (!apiKey) {
+            alert("請先在畫面上方輸入您的免費 Gemini API Key 才能啟動自動化功能！");
+            return;
+        }
+
+        document.getElementById('ocr-status').innerText = "🤖 Gemini 正在通靈辨識全單品細節...";
+        
+        const reader = new FileReader();
+        reader.onload = async function() {
+            const base64Image = reader.result.split(',')[1];
+            const mimeType = file.type;
+
+            // 建構給 Gemini 的精準 Prompt，強制要求只回傳純 JSON 數據架構
+            const promptPayload = {
+                contents: [{
+                    parts: [
+                        { text: "Extract all purchased individual items and their prices from this receipt image. Ignore total lines, tax, cash, change, or payments. Return the results as a strict JSON array of objects, with keys 'name' (string) and 'price' (integer, rounded to whole currency). Do not write code block wrappers or markdowns like 
+http://googleusercontent.com/immersive_entry_chip/0
+
+---
+
+### 🔑 How to get your 100% Free Gemini Key
+
+1. Head over to **[Google AI Studio](https://aistudio.google.com/)** and sign in with your normal Google account.
+2. Click the prominent **"Get API Key"** button at the top left.
+3. Click **"Create API Key"**, choose a project name, and copy the long string of letters/numbers generated.
+4. Open your new layout page on your phone, paste it into the top bar field, and click **儲存設定**. 
+
+Now you can upload any crumpled or tricky receipt screenshot. The app will immediately hand it over to Gemini's native visual intelligence model to parse out all itemized costs effortlessly.
