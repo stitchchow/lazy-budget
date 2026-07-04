@@ -81,7 +81,7 @@
 
     function predictCategoryByTime() {
         const hour = new Date().getHours();
-        if (hour >= 6 && hour < 11) return "☕ 早餐交通";
+        if (hour >= 6 && hour < 11) return "☕ 早餐 / 交通";
         if (hour >= 11 && hour < 14) return "🍱 續命午餐";
         if (hour >= 14 && hour < 17) return "🍰 蛇王下午茶";
         if (hour >= 17 && hour < 21) return "🏠 放工晚餐";
@@ -198,13 +198,20 @@
         resetInput();
     }
 
+    // 升級版修改功能：可同時修改金額與分類名稱
     function editRecord(id) {
         const targetLog = logs.find(log => log.id === id);
         if (!targetLog) return;
         
+        // Step 1: 先改分類項目名稱
+        const newCategory = prompt(`請輸入新的消費項目/分類 (當前: ${targetLog.category}):`, targetLog.category);
+        if (newCategory === null) return; // 使用者按取消就中斷
+
+        // Step 2: 再改金額數字
         const newAmount = prompt(`請輸入新的金額 (當前: $${targetLog.amount}):`, targetLog.amount);
         
         if (newAmount !== null && !isNaN(newAmount) && parseInt(newAmount) >= 0) {
+            targetLog.category = newCategory.trim() || "未命名消費";
             targetLog.amount = Math.round(parseInt(newAmount));
             localStorage.setItem('擺爛記帳Data_OCR', JSON.stringify(logs));
             updateUI();
@@ -213,7 +220,7 @@
 
     function deleteRecord(id) {
         logs = logs.filter(log => log.id !== id);
-        localStorage.setItem('擺帳Data_OCR', JSON.stringify(logs));
+        localStorage.setItem('擺爛記帳Data_OCR', JSON.stringify(logs));
         updateUI();
     }
 
@@ -226,7 +233,7 @@
         }
         box.innerHTML = logs.map(log => `
             <div class="history-item">
-                <span>[${log.time}] ${log.category} <b style="color: #ffb74d; margin-left: 10px;">+$${log.amount}</b></span>
+                <span>[${log.time}] <b>${log.category}</b> <b style="color: #ffb74d; margin-left: 5px;">+$${log.amount}</b></span>
                 <div>
                     <button style="background:none; border:none; cursor:pointer; font-size:14px; margin-right:8px;" onclick="editRecord(${log.id})">✏️</button>
                     <button class="btn-delete" onclick="deleteRecord(${log.id})">❌</button>
