@@ -106,33 +106,33 @@
                 document.getElementById('debug-box').innerText = "🔍 讀取到的卡單內容:\n" + text;
                 document.getElementById('debug-box').style.display = 'block';
 
-                // 切割成單行分析，精準抓取單品描述
                 const lines = text.split('\n');
                 let foundItemName = "";
                 let foundItemPrice = 0;
 
-                // 排除不具備參考價值的收據固定格式詞彙
-                const ignoreKeywords = /(?:total|sub total|subtotal|cash|change|tendered|thank|balance|invoice|receipt|visa|master|fps|轉帳|總計|金額)/i;
+                // 擴大黑名單：徹底封殺 "items sold", "qty item description", "sub total" 等干擾項目
+                const ignoreKeywords = /(?:total|sub total|subtotal|cash|change|tendered|thank|balance|invoice|receipt|visa|master|fps|轉帳|總計|金額|items sold|items|qty|description|price|品名|數量|單價)/i;
 
                 for (let line of lines) {
                     let cleanLine = line.trim();
+                    
+                    // 如果這行沒有內容，或者中了黑名單關鍵字，直接跳過看下一行
                     if (!cleanLine || ignoreKeywords.test(cleanLine)) continue;
 
-                    // 尋找行內包含數字（可帶小數點）的價格特徵，例如 "Strongbow Bottle  £4.00" 或 "雞扒飯 $45"
+                    // 尋找價格格式
                     const linePriceMatch = cleanLine.match(/(?:[\$£¥]|\b)(\d+(?:\.\d{1,2})?)\b\s*$/);
                     
                     if (linePriceMatch) {
                         let price = parseFloat(linePriceMatch[1]);
-                        // 移除匹配到的價格和可能的數量前綴數字，留下單品原有名稱描述
                         let namePart = cleanLine.replace(linePriceMatch[0], '')
-                                                 .replace(/^\d+x\s*/i, '') // 剪掉數量前綴（如 1x ）
+                                                 .replace(/^\d+x\s*/i, '') // 去掉數量的 1x 
+                                                 .replace(/^[\s|:|.|-]+/, '') // 去掉前方殘留的符號雜訊
                                                  .trim();
                         
-                        // 確保抓出合理有效的品名長度，避免抓到零星雜訊
                         if (namePart.length > 2 && price > 0) {
                             foundItemName = namePart;
                             foundItemPrice = price;
-                            break; // 成功找到第一項符合的單品就直接跳出
+                            break; // 抓到了真正的商品行（如 Strongbow Bottle）直接結束迴圈
                         }
                     }
                 }
@@ -142,7 +142,7 @@
                     finalAmount = Math.round(foundItemPrice);
                     document.getElementById('ocr-status').innerText = "✅ 成功匹配單品項目名稱與金額！";
                 } else {
-                    // 如果單行沒匹配到，啟動原本的保底方案抓總額
+                    // 保底機制
                     let cleanText = text.replace(/,/g, '');
                     let detectedNumbers = [];
                     const currencyRegex = /(?:HK\$|\$|£)\s*(\d+(?:\.\d{1,2})?)/gi;
@@ -151,7 +151,7 @@
                         detectedNumbers.push(parseFloat(match[1]));
                     }
                     if (detectedNumbers.length > 0) {
-                        finalAmount = Math.round(Math.min(...detectedNumbers)); // 抓非總額的基礎單項值
+                        finalAmount = Math.round(Math.min(...detectedNumbers));
                         finalCategory = predictCategoryByTime();
                         document.getElementById('ocr-status').innerText = "✅ 找不到明確單品描述，改用金額保底分類";
                     } else {
