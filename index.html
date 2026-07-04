@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>極度擺爛·AI影相OCR記帳</title>
+    <!-- 引入免費用戶端 OCR 引擎 -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #121212; color: #fff;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            min-height: 100vh; margin: 0; padding: 20px;
+        }
+        .container { width: 100%; max-width: 400px; background: #1e1e1e; padding: 25px; border-radius: 24px; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+        h1 { font-size: 22px; color: #ffb74d; margin: 0 0 5px 0; }
+        .subtitle { font-size: 13px; color: #aaa; margin-bottom: 20px; }
+        
+        .panel { background: #2d2d2d; padding: 15px; border-radius: 16px; margin-bottom: 15px; border: 1px solid #444; }
+        .category-badge { display: inline-block; background: #ff5722; color: white; padding: 4px 12px; border-radius: 20px; font-size: 16px; font-weight: bold; margin-top: 5px; }
+        
+        .current-input { font-size: 40px; font-weight: bold; color: #81c784; margin: 15px 0; }
+
+        /* OCR 區域 */
+        .ocr-zone { background: #37474f; padding: 15px; border-radius: 16px; margin-bottom: 15px; border: 1px solid #00e5ff; }
+        .btn-upload { background: #00e5ff; color: #000; border: none; padding: 12px; font-size: 15px; font-weight: bold; border-radius: 12px; cursor: pointer; width: 100%; display: block; }
+        #ocr-status { font-size: 12px; color: #00e5ff; margin-top: 8px; font-weight: bold; }
+
+        .money-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 15px; }
+        .btn-money { background: #388e3c; color: white; border: none; padding: 12px; font-size: 16px; font-weight: bold; border-radius: 12px; cursor: pointer; }
+        
+        .btn-action { background: #0288d1; color: white; border: none; padding: 15px; font-size: 18px; font-weight: bold; border-radius: 16px; cursor: pointer; width: 100%; margin-bottom: 15px; }
+        .history { text-align: left; max-height: 120px; overflow-y: auto; background: #1a1a1a; padding: 10px; border-radius: 12px; font-size: 13px; }
+        .history-item { padding: 6px 0; border-bottom: 1px solid #333; display: flex; justify-content: space-between; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>懶人自動記帳 Pro + OCR</h1>
+    <div class="subtitle">影張單 / 掉張 Screencap 全自動讀數</div>
+
+    <!-- AI時間感應 -->
+    <div class="panel">
+        <div style="font-size: 13px; color: #ccc;">系統自動預判時段：</div>
+        <div id="auto-cat" class="category-badge">日常消費</div>
+    </div>
+
+    <!-- OCR 影相上載區 -->
+    <div class="ocr-zone">
+        <label for="file-input" class="btn-upload">📸 影相 / 選擇收據 Screencap</label>
+        <input type="file" id="file-input" accept="image/*" style="display: none;" onchange="handleImage(this)">
+        <div id="ocr-status">等待上載圖片...</div>
+    </div>
+
+    <!-- 顯示最終金額 -->
+    <div class="current-input" id="display-amount">$0</div>
+
+    <!-- 手動修正大掣（如果OCR讀錯可以加減） -->
+    <div class="money-grid">
+        <button class="btn-money" onclick="adjustAmount(-10)">- $10</button>
+        <button class="btn-money" onclick="adjustAmount(1)">+ $1</button>
+        <button class="btn-money" onclick="adjustAmount(10)">+ $10</button>
+    </div>
+
+    <button class="btn-action" onclick="saveRecord()">👌 確認記低（自動儲存）</button>
+
+    <h3 style="font-size: 13px; text-align: left; margin: 10px 0 5px 0; color: #aaa;">今日流水帳：</h3>
+    <div class="history" id="history-box"></div>
+</div>
+
+<script>
+    let finalAmount = 0;
+    let logs = JSON.parse(localStorage.getItem('擺爛記帳Data_OCR')) || [];
+
+    function predictCategory() {
+        const hour = new Date().getHours();
+        let category = "日常消費";
+        if (hour >= 6 && hour < 11) category = "☕ 早餐交通";
+        else if (hour >= 11 && hour < 14) category = "🍱 續命午餐";
+        else if (hour >= 14 && hour < 17) category = "🍰 蛇王下午茶";
+        else if (hour >= 17 && hour < 21) category = "🏠 放工晚餐";
+        else if (hour >= 21 && hour < 24) category = "🍺 熱血宵夜";
+        else category = "🌙 凌晨神秘消費";
+        document.getElementById('auto-cat').innerText = category;
+        return category;
+    }
+
+    // 處理圖片 OCR
+    function handleImage(input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        document.getElementById('ocr-status').innerText = "⚡ 擺爛 AI 辨識中，等幾秒...";
+        
+        const reader = new FileReader();
+        reader.onload = function() {
+            // 呼叫 Tesseract.js 進行前端文字辨識
+            Tesseract.recognize(
+                reader.result,
+                'eng', // 英文+數字（讀單、Screencap 數字最準）
+                { logger: m => console.log(m) }
+            ).then(({ data: { text } }) => {
+                console.log("OCR Raw Text:", text);
+                
+                // 擺爛流核心計算法：用 Regular Expression 搵出相入面所有好似金額嘅數字 (例如 $64, 120.00)
+                const moneyPattern = /(?:\$)\s*(\d+(?:\.\d)?)/g;
+                let matches = [];
+                let match;
+                
+                // 如果有帶 $ 符號優先搵
+                while ((match = moneyPattern.exec(text)) !== null) {
+                    matches.push(parseFloat(match[1]));
+                }
+                
+                // 如果搵唔到帶 $ 嘅，就夾硬搵純數字
+                if (matches.length === 0) {
+                    const numberPattern = /\b\d{2,4}\b/g; // 搵2-4位數嘅數字
+                    const pureNumbers = text.match(numberPattern);
+                    if (pureNumbers) matches = pureNumbers.map(n => parseFloat(n));
+                }
+
+                if (matches.length > 0) {
+                    // 通常最大嗰個數或者最後出現嘅數係總額，呢度當最大個數係總額
+                    finalAmount = Math.max(...matches);
+                    // 轉做整數方便擺爛
+                    finalAmount = Math.round(finalAmount);
+                    
+                    document.getElementById('ocr-status').innerText = "✅ 辨識成功！";
+                    updateUI();
+                } else {
+                    document.getElementById('ocr-status').innerText = "❌ 睇唔清金額，手動撳吓下面修正？";
+                }
+            }).catch(err => {
+                document.getElementById('ocr-status').innerText = "⚠️ 發生錯誤，請重試";
+                console.error(err);
+            });
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function adjustAmount(val) {
+        finalAmount += val;
+        if (finalAmount < 0) finalAmount = 0;
+        updateUI();
+    }
+
+    function saveRecord() {
+        if (finalAmount <= 0) return;
+        const cat = predictCategory();
+        const timeString = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+        logs.unshift({ amount: finalAmount, category: cat, time: timeString });
+        localStorage.setItem('擺爛記帳Data_OCR', JSON.stringify(logs));
+
+        // 重置
+        finalAmount = 0;
+        document.getElementById('ocr-status').innerText = "等待下張圖片...";
+        updateUI();
+    }
+
+    function updateUI() {
+        document.getElementById('display-amount').innerText = `$${finalAmount}`;
+        const box = document.getElementById('history-box');
+        if (logs.length === 0) {
+            box.innerHTML = `<div style="color: #666; text-align: center; font-size: 12px; padding: 15px;">未有紀錄，繼續擺爛</div>`;
+            return;
+        }
+        box.innerHTML = logs.map(log => `
+            <div class="history-item">
+                <span>[${log.time}] ${log.category}</span>
+                <span style="color: #ffb74d; font-weight:bold;">+$${log.amount}</span>
+            </div>
+        `).join('');
+    }
+
+    predictCategory();
+    updateUI();
+</script>
+
+</body>
+</html>
