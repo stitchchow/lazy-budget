@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>極度擺爛·AI智能文本匹配記帳 Pro</title>
+    <title>極度擺爛·AI智能單品識別記帳 Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         body {
@@ -42,11 +42,11 @@
 <body>
 
 <div class="container">
-    <h1>懶人自動記帳 Pro</h1>
-    <div class="subtitle">圖片智能文字匹配 · 跨時段精準分類</div>
+    <h1>過濾單品記帳 Pro</h1>
+    <div class="subtitle">自動提取品名文字與消費金額</div>
 
     <div class="panel">
-        <div style="font-size: 13px; color: #ccc;" id="prediction-type">系統當前預判：</div>
+        <div style="font-size: 13px; color: #ccc;" id="prediction-type">偵測到的品名項目：</div>
         <div id="auto-cat" class="category-badge">日常消費</div>
     </div>
 
@@ -89,28 +89,11 @@
         return "🌙 凌晨神秘消費";
     }
 
-    function matchCategoryByText(rawText) {
-        const text = rawText.toLowerCase();
-        if (/coffee|cafe|alpha|starbucks|mcdonald|breakfast|早|美心西餅/.test(text)) {
-            return "☕ 早餐 / 咖啡店";
-        }
-        if (/foodpanda|keeta|deliveroo|restaurant|餐|麵|飯|意粉|譚仔|大家樂|大快活/.test(text)) {
-            return "🍱 續命正餐 / 外賣";
-        }
-        if (/mtr|kmb|lrt|taxi|uber|八達通|地鐵|的士|巴士|過海/.test(text)) {
-            return "🚇 交通運輸";
-        }
-        if (/apple|hkt|psn|nintendo|steam|taobao|hktvmall|淘寶|課金|買|網購/.test(text)) {
-            return "🛍️ 網購娛樂 / 課金";
-        }
-        return predictCategoryByTime();
-    }
-
     function handleImage(input) {
         const file = input.files[0];
         if (!file) return;
 
-        document.getElementById('ocr-status').innerText = "⚡ 擺爛 AI 正在深度掃描文字與內容...";
+        document.getElementById('ocr-status').innerText = "⚡ 正在分析收據線索...";
         document.getElementById('debug-box').style.display = 'none';
         
         const reader = new FileReader();
@@ -123,42 +106,62 @@
                 document.getElementById('debug-box').innerText = "🔍 讀取到的卡單內容:\n" + text;
                 document.getElementById('debug-box').style.display = 'block';
 
-                finalCategory = matchCategoryByText(text);
-                document.getElementById('prediction-type').innerText = "💡 依據截圖商戶匹配品類：";
-                document.getElementById('auto-cat').innerText = finalCategory;
+                // 切割成單行分析，精準抓取單品描述
+                const lines = text.split('\n');
+                let foundItemName = "";
+                let foundItemPrice = 0;
 
-                let cleanText = text.replace(/,/g, '');
-                let detectedNumbers = [];
+                // 排除不具備參考價值的收據固定格式詞彙
+                const ignoreKeywords = /(?:total|sub total|subtotal|cash|change|tendered|thank|balance|invoice|receipt|visa|master|fps|轉帳|總計|金額)/i;
 
-                const currencyRegex = /(?:HK\$|\$)\s*(\d+(?:\.\d{1,2})?)/gi;
-                let match;
-                while ((match = currencyRegex.exec(cleanText)) !== null) {
-                    detectedNumbers.push(parseFloat(match[1]));
+                for (let line of lines) {
+                    let cleanLine = line.trim();
+                    if (!cleanLine || ignoreKeywords.test(cleanLine)) continue;
+
+                    // 尋找行內包含數字（可帶小數點）的價格特徵，例如 "Strongbow Bottle  £4.00" 或 "雞扒飯 $45"
+                    const linePriceMatch = cleanLine.match(/(?:[\$£¥]|\b)(\d+(?:\.\d{1,2})?)\b\s*$/);
+                    
+                    if (linePriceMatch) {
+                        let price = parseFloat(linePriceMatch[1]);
+                        // 移除匹配到的價格和可能的數量前綴數字，留下單品原有名稱描述
+                        let namePart = cleanLine.replace(linePriceMatch[0], '')
+                                                 .replace(/^\d+x\s*/i, '') // 剪掉數量前綴（如 1x ）
+                                                 .trim();
+                        
+                        // 確保抓出合理有效的品名長度，避免抓到零星雜訊
+                        if (namePart.length > 2 && price > 0) {
+                            foundItemName = namePart;
+                            foundItemPrice = price;
+                            break; // 成功找到第一項符合的單品就直接跳出
+                        }
+                    }
                 }
 
-                if (detectedNumbers.length === 0) {
-                    const keywordRegex = /(?:total|amount|sum|pay|fps|轉帳|總計|金額|🛡️|💰)\s*:?\s*(\d+(?:\.\d{1,2})?)/gi;
-                    while ((match = keywordRegex.exec(cleanText)) !== null) {
+                if (foundItemName && foundItemPrice > 0) {
+                    finalCategory = foundItemName;
+                    finalAmount = Math.round(foundItemPrice);
+                    document.getElementById('ocr-status').innerText = "✅ 成功匹配單品項目名稱與金額！";
+                } else {
+                    // 如果單行沒匹配到，啟動原本的保底方案抓總額
+                    let cleanText = text.replace(/,/g, '');
+                    let detectedNumbers = [];
+                    const currencyRegex = /(?:HK\$|\$|£)\s*(\d+(?:\.\d{1,2})?)/gi;
+                    let match;
+                    while ((match = currencyRegex.exec(cleanText)) !== null) {
                         detectedNumbers.push(parseFloat(match[1]));
                     }
-                }
-
-                if (detectedNumbers.length === 0) {
-                    const generalPriceRegex = /\b\d{2,4}\b/g;
-                    const pureNumbers = cleanText.match(generalPriceRegex);
-                    if (pureNumbers) {
-                        detectedNumbers = pureNumbers.map(n => parseFloat(n)).filter(num => num < 2020 || num > 2030);
+                    if (detectedNumbers.length > 0) {
+                        finalAmount = Math.round(Math.min(...detectedNumbers)); // 抓非總額的基礎單項值
+                        finalCategory = predictCategoryByTime();
+                        document.getElementById('ocr-status').innerText = "✅ 找不到明確單品描述，改用金額保底分類";
+                    } else {
+                        document.getElementById('ocr-status').innerText = "⚠️ 讀取失敗，請手動輸入校對";
                     }
                 }
 
-                if (detectedNumbers.length > 0) {
-                    let maxAmount = Math.max(...detectedNumbers);
-                    finalAmount = Math.round(maxAmount);
-                    document.getElementById('ocr-status').innerText = "✅ 自動辨識金額與品類成功！";
-                    updateUI();
-                } else {
-                    document.getElementById('ocr-status').innerText = "⚠️ 讀到品類，但金額模糊，請手動校對";
-                }
+                document.getElementById('prediction-type').innerText = "💡 偵測到的品名項目：";
+                document.getElementById('auto-cat').innerText = finalCategory;
+                updateUI();
             }).catch(err => {
                 document.getElementById('ocr-status').innerText = "⚠️ 辨識失敗，請再試一次";
                 console.error(err);
@@ -198,16 +201,13 @@
         resetInput();
     }
 
-    // 升級版修改功能：可同時修改金額與分類名稱
     function editRecord(id) {
         const targetLog = logs.find(log => log.id === id);
         if (!targetLog) return;
         
-        // Step 1: 先改分類項目名稱
         const newCategory = prompt(`請輸入新的消費項目/分類 (當前: ${targetLog.category}):`, targetLog.category);
-        if (newCategory === null) return; // 使用者按取消就中斷
+        if (newCategory === null) return;
 
-        // Step 2: 再改金額數字
         const newAmount = prompt(`請輸入新的金額 (當前: $${targetLog.amount}):`, targetLog.amount);
         
         if (newAmount !== null && !isNaN(newAmount) && parseInt(newAmount) >= 0) {
