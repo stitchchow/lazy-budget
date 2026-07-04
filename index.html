@@ -21,12 +21,10 @@
         
         .current-input { font-size: 45px; font-weight: bold; color: #81c784; margin: 15px 0; letter-spacing: 1px; }
 
-        /* OCR 區域 */
         .ocr-zone { background: #37474f; padding: 15px; border-radius: 16px; margin-bottom: 15px; border: 1px solid #00e5ff; }
         .btn-upload { background: #00e5ff; color: #000; border: none; padding: 12px; font-size: 15px; font-weight: bold; border-radius: 12px; cursor: pointer; width: 100%; display: block; text-align: center; }
         #ocr-status { font-size: 12px; color: #00e5ff; margin-top: 8px; font-weight: bold; min-height: 16px; }
 
-        /* 快速調整面板 */
         .money-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 15px; }
         .btn-money { background: #388e3c; color: white; border: none; padding: 12px 5px; font-size: 15px; font-weight: bold; border-radius: 12px; cursor: pointer; }
         .btn-money.minus { background: #c62828; }
@@ -34,7 +32,6 @@
         
         .btn-action { background: #0288d1; color: white; border: none; padding: 15px; font-size: 18px; font-weight: bold; border-radius: 16px; cursor: pointer; width: 100%; margin-bottom: 15px; }
         
-        /* 歷史紀錄與刪除鍵 */
         .history { text-align: left; max-height: 180px; overflow-y: auto; background: #1a1a1a; padding: 10px; border-radius: 12px; font-size: 13px; }
         .history-item { padding: 8px 0; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
         .btn-delete { background: none; border: none; color: #ff5252; cursor: pointer; font-size: 14px; padding: 0 5px; }
@@ -160,7 +157,7 @@
                     document.getElementById('ocr-status').innerText = "✅ 自動辨識金額與品類成功！";
                     updateUI();
                 } else {
-                    document.getElementById('ocr-status').innerText = "⚠️ 讀到品類，打金額模糊，請手動校對";
+                    document.getElementById('ocr-status').innerText = "⚠️ 讀到品類，但金額模糊，請手動校對";
                 }
             }).catch(err => {
                 document.getElementById('ocr-status').innerText = "⚠️ 辨識失敗，請再試一次";
@@ -216,10 +213,32 @@
 
     function deleteRecord(id) {
         logs = logs.filter(log => log.id !== id);
-        localStorage.setItem('擺爛記帳Data_OCR', JSON.stringify(logs));
+        localStorage.setItem('擺帳Data_OCR', JSON.stringify(logs));
         updateUI();
     }
 
     function updateUI() {
         document.getElementById('display-amount').innerText = `$${finalAmount}`;
         const box = document.getElementById('history-box');
+        if (logs.length === 0) {
+            box.innerHTML = `<div style="color: #666; text-align: center; font-size: 12px; padding: 15px;">未有紀錄，繼續擺爛</div>`;
+            return;
+        }
+        box.innerHTML = logs.map(log => `
+            <div class="history-item">
+                <span>[${log.time}] ${log.category} <b style="color: #ffb74d; margin-left: 10px;">+$${log.amount}</b></span>
+                <div>
+                    <button style="background:none; border:none; cursor:pointer; font-size:14px; margin-right:8px;" onclick="editRecord(${log.id})">✏️</button>
+                    <button class="btn-delete" onclick="deleteRecord(${log.id})">❌</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    finalCategory = predictCategoryByTime();
+    document.getElementById('auto-cat').innerText = finalCategory;
+    updateUI();
+</script>
+
+</body>
+</html>
